@@ -1,8 +1,16 @@
 ---
-title: "Analysis of the Weight Lifting Exercise Dataset"
-author: "V. Taralova"
+title: "Building a Predictive Model for the Weight Lifting Exercise Dataset"
+author: "Vasilena Taralova"
 date: "December 18, 2016"
-output: html_document
+output: 
+  html_document:
+    toc: true 
+    toc_float: true 
+    toc_depth: 2
+    depth: 3 
+    number_sections: true
+    theme: readable 
+    highlight: tango 
 ---
 
 ```{r setup, include=FALSE}
@@ -13,19 +21,33 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction 
 
-In this project we analyse a data from acceleration and position sensors put on the belt, forearm, arm, and dumbell of 6 participants.
-The data set can be downloaded from https://archive.ics.uci.edu/ml/datasets/Weight+Lifting+Exercises+monitored+with+Inertial+Measurement+Units. More information is available at: http://groupware.les.inf.puc-rio.br/har#ixzz4TBbNIRh9, as well as in the paper: "Qualitative Activity Recognition of Weight Lifting Exercises", Velloso, E., Bulling, A., Gellersen, H., Ugulino, W. and Fuks, H., Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13), Stuttgart, Germany: ACM SIGCHI, 2013. 
+In this project we build a *predictive model* for a weight lifting exercise dataset. The data is collected from acceleration and position sensors put on the belt, forearm, arm, and dumbell of 6 participants. The participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The correctly performed exercises are labeled as class A in the dataset and the various incorrectly performed exercises are labeled as classes B to E depending on the mistakes made. The labels are stored in the "classe" variable. The full data can be downloaded from the University of California, Irvine (UCI) [Machine Learning Repository](https://archive.ics.uci.edu/ml/datasets/Weight+Lifting+Exercises+monitored+with+Inertial+Measurement+Units). The analysis in the project is performed on a preprocessed version of the dataset as part of the Practical Machine Learning course by Johns Hopkins University on Coursera. While the filtered dataset is not publicly available, it uses data only from the original dataset. More information about the Weight Lifting Exercise Dataset is available at: http://groupware.les.inf.puc-rio.br/har#ixzz4TBbNIRh9 , as well as in the paper: "Qualitative Activity Recognition of Weight Lifting Exercises", Velloso, E., Bulling, A., Gellersen, H., Ugulino, W. and Fuks, H., Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13), Stuttgart, Germany: ACM SIGCHI, 2013. 
 
-The participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The correctly performed exercises are labeled as Class A in the data set and the various incorrectly performed exercises are labeled as classes B to E depending on the mistakes made. 
+Our goal is, based on the given measurements, *to build a model that can predict whether an exercise is performed correctly or not for new data*. We use Random Forest and Support Vector Machines (SVM) algorithms to build prediction models. We then compare the two models in terms of their prediction accuracy on a test dataset, i.e. new data.  
 
-Our goal is, based on the given measurements, to build a model that can predict whether an exercise is performed correctly or not for new data.   
+# Reading the data
 
+First we load the packages that we will need:
 
-# Reading the Data
+```{r, message=FALSE, warning=FALSE}
+
+library(caret)
+library(e1071)
+library(randomForest)
+
+```
+
+Then we set the working directory:
 
 ```{r}
 
 setwd("D:/Coursera_Practical_Machine_Learning/Final_Project")
+
+```
+
+Since the dataset that we use is not publicly available, we do not include the code for downloading the coma-separated-value files that we read below:
+
+```{r}
 
 db.train = read.table("pml-training.csv", sep = ",", header = TRUE)
 
@@ -33,17 +55,43 @@ db.test = read.table("pml-testing.csv", sep = ",", header = TRUE)
 
 ```
 
+In the "db.train" data frame we store the train dataset and in the "db.test" data frame -- the test dataset. 
+
 The data frame "db.train" has `r dim(db.train)[1]` observations of `r dim(db.train)[2]` variables:
 
-```{r}
+```{r, comment=""}
 
 dim(db.train)
 
 ```
 
-# Cleaning Missing Values
+and the "db.test" data frame has `r dim(db.test)[1]` rows and `r dim(db.test)[2]` columns:
 
-First we check for the percentage of missing values in each variable. For this purpose we create a list containing the columns of the data frame "db.train" as its elements: 
+```{r, comment=""}
+
+dim(db.test)
+
+```
+
+Let us take a look at part of the "db.train" data frame:
+
+```{r, comment=""}
+
+head(db.train[ , 1:12])
+
+```
+
+The labels which indicate whether or not an exercise is performed correctly are stored in the factor variable "classe":
+
+```{r, comment=""}
+
+head(db.train$classe, 15)
+
+```
+
+# Cleaning missing values
+
+First we check for the percentage of missing values in each variable. For this purpose we create a list containing the columns of the data frame "db.train": 
 
 ```{r}
 
@@ -63,7 +111,7 @@ sum.NA <- sapply(db.columns.list, function(v){
 
 percentage.NA <- sapply(db.columns.list, function(v){
   
-  mean(is.na(v))
+  round(100*mean(is.na(v)), 3)
   
 }, simplify = TRUE)
 
@@ -71,7 +119,7 @@ percentage.NA <- sapply(db.columns.list, function(v){
 
 It turns out that the number of variables with missing values is `r length(which(percentage.NA > 0))`:
 
-```{r}
+```{r, comment=""}
 
 length(which(sum.NA > 0))
 
@@ -79,7 +127,7 @@ length(which(sum.NA > 0))
 
 Next, we extract the indices of the variables with missing values and we display the names of these variables along with the respective percentage of NA values:
 
-```{r}
+```{r, comment=""}
 
 indices.NA <- which(sum.NA > 0)
 
@@ -89,14 +137,15 @@ percentage.NA[indices.NA]
 
 All of the variables with non-zero number of NA values have more than 90% missing values:
 
-```{r}
+```{r, comment=""}
 
-length(which(percentage.NA[indices.NA] > 0.9))==length(which(sum.NA > 0)) 
+length(which(percentage.NA[indices.NA] > 0.9))==length(which(sum.NA > 0))
+
 ```
 
 Looking at the data frame we notice that there are also many variables containing nonsense values, such as "" (empty fields) and "#DIV/0!", e.g.:
 
-```{r}
+```{r, comment=""}
 
 head(db.train[, 70:75], 10)
 
@@ -115,7 +164,7 @@ number.nomeaning <- sapply(db.columns.list, function(v){
 
 percentage.NM <- sapply(db.columns.list, function(v){
   
-  mean(v == "" | v == "#DIV/0!")
+  round(100*mean(v == "" | v == "#DIV/0!"), 3)
   
 }, simplify = TRUE)
 
@@ -123,7 +172,7 @@ percentage.NM <- sapply(db.columns.list, function(v){
 
 The number of variables with "" or "#DIV/0!" values is:
 
-```{r}
+```{r, comment=""}
 
 length(which(number.nomeaning > 0))
 
@@ -131,7 +180,7 @@ length(which(number.nomeaning > 0))
 
 Below we show the variables containing non-meaningful values together with the respective percentage of these values:
 
-```{r}
+```{r, comment=""}
 
 indices.NM <- which(number.nomeaning > 0)
 
@@ -139,9 +188,9 @@ percentage.NM[indices.NM]
 
 ```
 
-All of the variables with non-zero number of non-meaningful values have more than 90% missing values:
+All of the variables with non-zero number of non-meaningful values have more than 90% of these non-meaningful values:
 
-```{r}
+```{r, comment=""}
 
 length(which(percentage.NM[indices.NM] > 0.9))==length(which(number.nomeaning > 0))
 
@@ -149,7 +198,7 @@ length(which(percentage.NM[indices.NM] > 0.9))==length(which(number.nomeaning > 
 
 We check if there is an overlap between the variables containig missing values (NA) and the variables containing non-meaningful values:
 
-```{r}
+```{r, comment=""}
 
 intersect(indices.NM, indices.NA)
 
@@ -189,15 +238,12 @@ db.test = db.test[,-ind]
 
 ```
 
-# Fitting a Model
 
-## Partition of the "db.train" data set into a new training data set and a validation data set
+# Partition of the "db.train" data set into a new training set and a validation set
 
-First we partition the training data set into new training data set and a cross validation data set. We use 70% of the training data set for training and the other 30% for cross validation:
+We partition the training dataset into a new training dataset and a cross validation dataset. We use 70% of the training dataset for the new training data and the other 30% -- for cross validation:
 
 ```{r, message = FALSE}
-
-library(caret)
 
 set.seed(35721)
 
@@ -209,9 +255,9 @@ db.validation = db.train[-inTrain, ]
 
 ```
 
-The dimensions of the new data sets are given below:
+The dimensions of the new datasets are given below:
 
-```{r}
+```{r, comment=""}
 
 dim(db.training)
 
@@ -219,44 +265,79 @@ dim(db.validation)
 
 ```
 
+# Fitting a prediction model
 
-## Support Vector Machines (SVM)
+We build a model that can predict whether an exercise is performed correctly or not for new observations. We use Random Forest and Support Vector Machines (SVM) algorithms to build the prediction models.
 
-We fit a model with the support vector machines (svm) algorithm, which is implemented in the R package "e1071". This is a popular method that usually has reasonable default performance and has parameters that allow for further tuning if necessary. It also allows for fitting both linearly and non-linearly separable data using linear or non-linear kernels, respectively.  
-By default, the "svm()" function in the "e1071" package scales the data. 
+## Support Vector Machines 
+
+We fit a model with the Support Vector Machines (SVM) algorithm, which is implemented in the R package "e1071". This is a popular method that usually has reasonable default performance and has parameters that allow for further tuning if necessary. It also allows for fitting both linearly and non-linearly separable data using linear or non-linear kernels, respectively. By default, the "svm()" function in the "e1071" package scales the data. 
+
+### Linear kernel
 
 First we train an SVM model with kernel set to "linear": 
 
-```{r SVMlinear, message = FALSE}
-
-library(e1071)
+```{r SVMlinear, message = FALSE, cache=TRUE}
 
 set.seed(45112)
 
 start_time <- proc.time()
-ModSVM.lin <- svm(classe~., data = db.training, kernel = "linear")
-proc.time() - start_time
+ModSVM.lin <- svm(formula = classe~., 
+                  data = db.training, 
+                  kernel = "linear")
+time <- proc.time() - start_time
+time
 
 ```
 
-The computational time is approximately 45s. The vector "predSVM.lin" contains the predictions on the training data set and the vector "predSVM.valid.lin" contains the predictions on the validation data set. The accuracy on the training data is 78.99% and the "out of sample" accuracy is 78.79%. As expected, the "out of sample" accuracy is less than the "in sample" accuracy (and respectively, the "out of sample" error is greater than the "in sample" error). We also display the respective confusion matrices. 
+The computational time is approximately `r time[1]`s. 
 
-```{r}
+The vector "predSVM.lin" contains the predictions on the training data set:
 
-predSVM.lin <- predict(ModSVM.lin, newdata = db.training)
+```{r, cache=TRUE, comment=""}
+
+predSVM.lin <- predict(object = ModSVM.lin, 
+                       newdata = db.training)
+
+```
+
+The "ModSVM.lin" model predicts about `r round(100*mean(predSVM.lin == db.training$classe), 3)`% of the "classe" variable on the training data:
+
+```{r, comment=""}
 
 mean(predSVM.lin == db.training$classe)
 
-confusionMatrix(data = predSVM.lin, reference = db.training$classe)
+```
+
+Below we show the confusion matrix and some other statistics for the predicted outcome (the "classe" variable) on the training set:
+
+```{r, comment=""}
+
+confusionMatrix(data = predSVM.lin, 
+                reference = db.training$classe)
 
 ```
 
+The vector "predSVM.valid.lin" contains the predictions on the validation data set:
 
-```{r}
+```{r, cache=TRUE, comment=""}
 
-predSVM.valid.lin <- predict(ModSVM.lin, newdata = db.validation)
+predSVM.valid.lin <- predict(object = ModSVM.lin, 
+                             newdata = db.validation)
+
+```
+
+As we can see, the accuracy on the validation set is `r round(100*mean(predSVM.valid.lin == db.validation$classe), 3)`%. As expected, the "out of sample" accuracy is less than the "in sample" accuracy (and respectively, the "out of sample" error is greater than the "in sample" error):
+
+```{r, comment=""}
 
 mean(predSVM.valid.lin == db.validation$classe)
+
+```
+
+We also display the respective confusion matrix:
+
+```{r, comment=""}
 
 confusionMatrix(data = predSVM.valid.lin, 
                 reference = db.validation$classe)
@@ -264,61 +345,99 @@ confusionMatrix(data = predSVM.valid.lin,
 
 ```
 
-The above results suggests that the data is not linearly separable. Therefore, we try to fit an SVM model with the default radial kernel:
 
-```{r SVMradial}
+### Radial kernel
+
+The above results suggest that the data is not linearly separable. Therefore, we try to fit an SVM model with the default radial kernel:
+
+```{r SVMradial, cache=TRUE, comment=""}
 
 set.seed(45112)
 
 start_time <- proc.time()
-ModSVM <- svm(classe~., data = db.training)
-proc.time() - start_time
+ModSVM <- svm(formula = classe~., 
+              data = db.training)
+time <- proc.time() - start_time
+time
 
 ```
 
-In this case the computational time is approximately 48s. The vector "predSVM" contains the predictions on the training data set and the vector "predSVM.valid" contains the predictions on the validation data set. The "in sample" accuracy is 95.95% and the "out of sample" accuracy is 95.23%. Below we also display the respective confusion matrices:
+In this case the computational time is approximately `r time[1]`s. 
 
-```{r}
+The vector "predSVM" contains the predictions on the training data set:
 
-predSVM <- predict(ModSVM, newdata = db.training)
+```{r, cache=TRUE}
+
+predSVM <- predict(object = ModSVM, 
+                   newdata = db.training)
+
+```
+
+The "in sample" accuracy now is much better -- `r round(100*mean(predSVM == db.training$classe), 3)`%:
+
+```{r, comment=""}
 
 mean(predSVM == db.training$classe)
+
+```
+
+The confusion matrix for the training data is given below:
+
+```{r, comment=""}
 
 confusionMatrix(data = predSVM, reference = db.training$classe)
 
 ```
 
+The vector "predSVM.valid" contains the predictions on the validation data set:
 
-```{r}
+```{r, cache=TRUE}
 
-predSVM.valid <- predict(ModSVM, newdata = db.validation)
+predSVM.valid <- predict(object = ModSVM, 
+                         newdata = db.validation)
+
+```
+
+The "out of sample" accuracy is `r round(100*mean(predSVM.valid == db.validation$classe), 3)`% and is significantly better than that for a linear kernel:
+
+```{r, comment=""}
 
 mean(predSVM.valid == db.validation$classe)
 
+```
+
+And the confusion matrix for the validation data is:
+
+```{r, comment=""}
+
 confusionMatrix(data = predSVM.valid, reference = db.validation$classe)
 
-
 ```
+
+### Grid search for finding the optimal parameters
 
 The radial kernel already gives us very high accuracy, however, as per the suggestions in the documentation of the "e1071" package, we also perform a grid search to find the optimal parameters C and $\gamma$. 
 We follow the recommendations from the paper "A Practical Guide to Support Vector Classification" by Hsu, Chang, and Lin (<http://www.csie.ntu.edu.tw/~cjlin/papers/guide/guide.pdf>) and use exponentially growing C and $\gamma$. We also do not use cross validation but a fixed split for the sampling in the "tune.control":
 
-```{r tuneSVM}
+```{r tuneSVM, cache=TRUE, comment=""}
 
 set.seed(45112)
 
 start_time <- proc.time()
-Model.TunedSVM <- tune(svm, classe~., data = db.training,
+Model.TunedSVM <- tune(method = svm, 
+                       train.x = classe~., 
+                       data = db.training,
                        ranges = list(gamma = 2^seq(-9,-3,2),
                                      cost = 2^seq(4,10,2)), 
                        tunecontrol = tune.control(sampling = "fix"))
-proc.time() - start_time
+svm.tuned.time <- proc.time() - start_time
+svm.tuned.time
 
 ```
 
 We now plot the achieved error on the grid and show the summary of the model:  
 
-```{r}
+```{r, comment=""}
 
 plot(Model.TunedSVM)
 
@@ -328,7 +447,7 @@ summary(Model.TunedSVM)
 
 The lowest error is achieved at $\gamma=0.3$ and C=256. We now extract the best model which uses these parameters and check its accuracy:
 
-```{r}
+```{r, cache=TRUE, comment=""}
 
 BestTunedSVM <- Model.TunedSVM$best.model
 
@@ -341,63 +460,64 @@ The accuracy is above 99.5% on both the training set and the validation set. Hen
  
 ## Random Forest
 
-Here we fit a model with the random forest algorithm with the "randomForest()" function from the "randomForest" package. We use the default parameters, like the number of variables for each split (which in this case is $\sqrt{52}\approx 7$) and the number of trees, which is 500.
+Here we fit a model with the Random Forest algorithm with the "randomForest()" function from the "randomForest" package. We use the default parameters, like the number of variables for each split (which in this case is $\sqrt{52}\approx 7$) and the number of trees, which is 500.
 
-```{r, message = FALSE}
-
-library(randomForest)
+```{r, message = FALSE, cache=TRUE, comment=""}
 
 set.seed(1234)
 
 start_time <- proc.time()
-ModRF <- randomForest(classe~., data = db.training)
-proc.time() - start_time
+ModRF <- randomForest(formula = classe~., 
+                      data = db.training)
+time1 <- proc.time() - start_time
+time1
 
 ```
 
-The estimated "out of sample" error is 0.44%:
+We see that the estimated "out of sample" (called also "out-of-bag" error, or OOB) error is 0.44%:
 
-```{r}
-
-plot(ModRF)
+```{r, comment=""}
 
 print(ModRF)
+
+plot(ModRF)
 
 ```
 
 Below we test the accuracy on the training and the validation sets and we see that it is 100% and 99.52%, respectively, which is in agreement with the OOB estimate. 
 
-```{r}
+```{r, comment=""}
 
 mean(predict(ModRF, newdata = db.training) == db.training$classe)
 
-mean(predict(ModRF, newdata = db.validation) ==
-       db.validation$classe)
+mean(predict(ModRF, newdata = db.validation) == db.validation$classe)
 
 ```
 
-From the error plot of the random forest model, we see that the error does not decrease after the number of trees reaches a certain threshold. Hence, we try to build a RF model with 80 trees to check if we can achieve the same accuracy with a computationally less expensive model:
+From the error plot of the Random Forest model, we see that the error does not decrease after the number of trees reaches a certain threshold. Hence, we try to build a Random Forest model with 80 trees to check if we can achieve the same accuracy with a computationally less expensive model:
 
-```{r}
+```{r, cache=TRUE, comment=""}
 
 set.seed(1234)
 
 start_time <- proc.time()
-ModRF.small <- randomForest(classe~., data = db.training, ntree = 100)
-proc.time() - start_time
+ModRF.small <- randomForest(formula = classe~., 
+                            data = db.training, 
+                            ntree = 100)
+time2 <- proc.time() - start_time
+time2
 
 ```
 
-On our machine the computational time went from about 36s to 7s, which is 5 times faster. From the code below, we see that the OOB error estimate increased a little bit to 0.55% and the accuracy is again 100% on the training data and decreased by less than 0.2% on the validation set.
+On our machine the computational time went from about `r time1[1]`s to `r time2[1]`s, which is about `r round(time1[1]/time2[1], 1)` times faster. From the code below, we see that the OOB error estimate increased a little bit to 0.55%. The accuracy is again 100% on the training data and it decreased by less than 0.2% on the validation set:
 
-```{r}
+```{r, comment=""}
 
 print(ModRF.small)
 
 mean(predict(ModRF.small, newdata = db.training) == db.training$classe)
 
-mean(predict(ModRF.small, newdata = db.validation) ==
-       db.validation$classe)
+mean(predict(ModRF.small, newdata = db.validation) == db.validation$classe)
 
 ```
 
@@ -407,16 +527,20 @@ We also tried the "train()" function from the "caret" package. However, for this
 
 # Predicting the outcomes of the test cases
 
-We use the two fitted models to predict the outcomes for the test data set. 
+We use the two fitted Random Forest models and the SVM model to predict the outcomes for the test data set: 
 
-```{r}
+```{r, cache=TRUE}
 
 predict(BestTunedSVM, newdata = db.test) 
 
 predict(ModRF, newdata = db.test) 
 
-sum(predict(BestTunedSVM, newdata = db.test) != predict(ModRF, newdata = db.test))
+predict(ModRF.small, newdata = db.test)
+
+sum(predict(BestTunedSVM, newdata = db.test) != predict(ModRF, newdata = db.test)) 
+
+sum(predict(BestTunedSVM, newdata = db.test) != predict(ModRF.small, newdata = db.test))
 
 ```
 
-We see that the two models give identical results.
+We see that the three models give identical results. However, taking into account the fact that we needed `r time1[1]`s computational time to find the best SVM model compared to `r svm.tuned.time[1]`s needed for the "ModRF" model to be built, one might prefer the Random Forest approach.  
